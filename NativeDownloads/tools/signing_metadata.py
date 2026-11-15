@@ -7,6 +7,8 @@ empty entitlement set.
 import plistlib
 import struct
 import subprocess
+
+import linux_toolchain
 from pathlib import Path
 
 
@@ -64,11 +66,15 @@ def embedded_entitlements(data):
 
 def sign_preserving_entitlements(image, original, metadata_path):
     expected = embedded_entitlements(original)
-    command = ['codesign', '--force', '--sign', '-', '--timestamp=none']
     if expected:
         Path(metadata_path).write_bytes(plistlib.dumps(expected, sort_keys=False))
-        command += ['--entitlements', str(metadata_path), '--generate-entitlement-der']
-    subprocess.run(command + [str(image)], check=True)
+    if linux_toolchain.DARWIN:
+        command = ['codesign', '--force', '--sign', '-', '--timestamp=none']
+        if expected:
+            command += ['--entitlements', str(metadata_path), '--generate-entitlement-der']
+        subprocess.run(command + [str(image)], check=True)
+    else:
+        linux_toolchain.adhoc_sign(image, metadata_path if expected else None)
     observed = embedded_entitlements(Path(image).read_bytes())
     if observed != expected:
         raise ValueError('Re-signing changed the original entitlements')

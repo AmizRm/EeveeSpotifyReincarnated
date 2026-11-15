@@ -19,7 +19,9 @@ static atomic_uint_fast64_t preparationGeneration;
 static NSArray *installed;
 static os_unfair_lock reportLock = OS_UNFAIR_LOCK_INIT;
 static NSDictionary *reportSnapshot;
-static NSArray *history = @[];
+static NSArray *history;
+// apple clang folds @[] into a static initializer; other clangs reject it.
+__attribute__((constructor)) static void SAPInitDownloadHistory(void) { history = @[]; }
 static dispatch_source_t timer;
 static id jobTransport, errorStream;
 static NSArray *jobCandidates;

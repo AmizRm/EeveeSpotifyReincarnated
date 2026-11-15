@@ -12,6 +12,7 @@ from pathlib import Path
 from patch_native_restrictions import UUID, branch, layout
 
 from pixie_target import PROFILE, native_address, native_bytes
+import linux_toolchain
 
 PREFERRED = int(PROFILE["preferred_address"], 16)
 CALL_SITE = native_address("call_site")
@@ -31,9 +32,7 @@ ASSEMBLY = Path(__file__).with_name('key_mode_trampoline.S')
 def _compiled_template():
     with tempfile.TemporaryDirectory(prefix='pixie-key-thunk-') as directory:
         obj = Path(directory) / 'thunk.o'
-        sdk = subprocess.check_output(['xcrun', '--sdk', 'iphoneos', '--show-sdk-path'], text=True).strip()
-        subprocess.run(['xcrun', 'clang', '-c', '-arch', 'arm64', '-target', 'arm64-apple-ios15.0',
-                        '-isysroot', sdk, str(ASSEMBLY), '-o', str(obj)], check=True)
+        linux_toolchain.assemble(ASSEMBLY, obj)
         data = obj.read_bytes()
     cursor = 32
     for _ in range(struct.unpack_from('<I', data, 16)[0]):
