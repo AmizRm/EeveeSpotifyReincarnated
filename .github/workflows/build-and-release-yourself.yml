@@ -266,6 +266,49 @@ jobs:
                    --dylib extra_dylibs/zxPluginsInject.dylib
           echo "PATCHED_IPA=$PATCHED_OUT" >> $GITHUB_ENV
 
+      - name: Bundle the Pixie download manager (Spotify 9.2.0 only)
+        run: |
+          set -eo pipefail
+
+          # pixie ships as the SpotifyAudioProbe.dylib companion, built here by
+          # build_eevee_9192.py. without it eevee hides the download manager row.
+          # it is an addon, so nothing below is allowed to fail the build.
+          skip() { echo "::warning::pixie skipped - $1"; exit 0; }
+          warn() { echo "::warning::$1"; }
+
+          BUILD=NativeDownloads/tools/build_eevee_9192.py
+          VALIDATE=NativeDownloads/tools/validate_eevee_9192.py
+
+          if [ "$SPOTIFY_VERSION" != "9.2.0" ]; then
+            skip "spotify 9.2.0 only, this build is ${SPOTIFY_VERSION:-unknown}"
+          fi
+          if ! xcrun --sdk iphoneos --show-sdk-path >/dev/null 2>&1; then
+            skip "no iphoneos sdk on this runner"
+          fi
+
+          EEVEE_DYLIB=$(find "$RUNNER_TEMP/deb-extract" -name 'EeveeSpotify.dylib' | head -1)
+          [ -n "$EEVEE_DYLIB" ] || skip "no EeveeSpotify.dylib in the deb"
+          python3 "$VALIDATE" || skip "source validation failed"
+
+          for ipa in "$OUT_IPA" "$PATCHED_IPA"; do
+            [ -f "$ipa" ] || continue
+            name=$(basename "$ipa")
+            rm -rf "$RUNNER_TEMP/pixie"
+            mkdir -p "$RUNNER_TEMP/pixie"
+            out="$RUNNER_TEMP/pixie/$name"
+            report="$RUNNER_TEMP/pixie-$name.json"
+            if python3 "$BUILD" "$ipa" --eevee-dylib "$EEVEE_DYLIB" --output "$out" > "$report"; then
+              mv -f "$out" "$ipa"
+              if unzip -l "$ipa" | grep -q SpotifyAudioProbe.dylib; then
+                echo "pixie bundled into $name"
+              else
+                warn "no companion in $name after patching"
+              fi
+            else
+              warn "pixie could not patch $name - leaving it untouched"
+            fi
+          done
+
       # ── NEW STEP ─────────────────────────────────────────────────────────────
       # Write the real SpotifyVersionPacked integer to either `build` or
       # `build_testflight` at the repo root so update_repo can read it instead
