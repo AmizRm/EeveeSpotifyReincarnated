@@ -892,6 +892,51 @@ jobs:
 
           echo "PATCHED_IPA=$PATCHED_OUT" >> "$GITHUB_ENV"
 
+      - name: Bundle the Pixie download manager (Spotify 9.2.0 only)
+        run: |
+          set -eo pipefail
+
+          # same step as the non-ios-15 build job. safe to run after the ios 15
+          # patch: pixie only appends an LC_LOAD_DYLIB into the mach-o header
+          # padding and rewrites five import ordinals, so the shim command the
+          # ios 15 patch added keeps both its slot and its library ordinal.
+          # pixie is an addon, so nothing below is allowed to fail the build.
+          skip() { echo "::warning::pixie skipped - $1"; exit 0; }
+          warn() { echo "::warning::$1"; }
+
+          BUILD=NativeDownloads/tools/build_eevee_9192.py
+          VALIDATE=NativeDownloads/tools/validate_eevee_9192.py
+
+          if [ "$SPOTIFY_VERSION" != "9.2.0" ]; then
+            skip "spotify 9.2.0 only, this build is ${SPOTIFY_VERSION:-unknown}"
+          fi
+          if ! xcrun --sdk iphoneos --show-sdk-path >/dev/null 2>&1; then
+            skip "no iphoneos sdk on this runner"
+          fi
+
+          EEVEE_DYLIB=$(find "$RUNNER_TEMP/deb-extract" -name 'EeveeSpotify.dylib' | head -1)
+          [ -n "$EEVEE_DYLIB" ] || skip "no EeveeSpotify.dylib in the deb"
+          python3 "$VALIDATE" || skip "source validation failed"
+
+          for ipa in "$OUT_IPA" "$PATCHED_IPA"; do
+            [ -f "$ipa" ] || continue
+            name=$(basename "$ipa")
+            rm -rf "$RUNNER_TEMP/pixie"
+            mkdir -p "$RUNNER_TEMP/pixie"
+            out="$RUNNER_TEMP/pixie/$name"
+            report="$RUNNER_TEMP/pixie-$name.json"
+            if python3 "$BUILD" "$ipa" --eevee-dylib "$EEVEE_DYLIB" --output "$out" > "$report"; then
+              mv -f "$out" "$ipa"
+              if unzip -l "$ipa" | grep -q SpotifyAudioProbe.dylib; then
+                echo "pixie bundled into $name"
+              else
+                warn "no companion in $name after patching"
+              fi
+            else
+              warn "pixie could not patch $name - leaving it untouched"
+            fi
+          done
+
       - name: Validate mach-o load commands
         run: |
           set -eo pipefail
