@@ -15,6 +15,7 @@ from patch_key_request_mode import DLSYM_STUB,_verify_dlsym_binding
 
 SYMBOL=b'SAPTraceNativeBoundary\0'
 from pixie_target import PROFILE
+import linux_toolchain
 POINTS = [(point["name"], int(point["address"], 16), int(point["cave"], 16),
            bytes.fromhex(point["original"]), point["kind"])
           for point in PROFILE["trace_points"]]
@@ -88,8 +89,7 @@ Lname:
 '''
     with tempfile.TemporaryDirectory(prefix='pixie-native-trace-') as tmp:
         source=Path(tmp)/'boundary.S';obj=Path(tmp)/'boundary.o';source.write_text(asm)
-        sdk=subprocess.check_output(['xcrun','--sdk','iphoneos','--show-sdk-path'],text=True).strip()
-        subprocess.run(['xcrun','clang','-c','-arch','arm64','-target','arm64-apple-ios15.0','-isysroot',sdk,str(source),'-o',str(obj)],check=True)
+        linux_toolchain.assemble(source, obj)
         raw=obj.read_bytes()
     cursor=32
     for _ in range(struct.unpack_from('<I',raw,16)[0]):

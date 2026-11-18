@@ -25,11 +25,35 @@ from patch_offline import patch_reminder
 from signing_metadata import sign_preserving_entitlements
 
 from pixie_target import PROFILE, ROOT, resolve_source, validate_sources
+import linux_toolchain
 UUID = bytes.fromhex(PROFILE["uuid"])
 
 
 def run(*command):
     subprocess.run([str(part) for part in command], check=True)
+
+
+def sign_and_validate(path):
+    if linux_toolchain.DARWIN:
+        run("codesign", "--force", "--sign", "-", "--timestamp=none", path)
+        run("codesign", "--verify", "--strict", path)
+        run("xcrun", "dyld_info", "-validate_only", path)
+    else:
+        linux_toolchain.adhoc_sign(path)
+        linux_toolchain.validate(path)
+
+
+def validate(path):
+    if linux_toolchain.DARWIN:
+        run("xcrun", "dyld_info", "-validate_only", path)
+    else:
+        linux_toolchain.validate(path)
+
+
+def imports_listing(path):
+    if linux_toolchain.DARWIN:
+        return subprocess.check_output(["xcrun", "dyld_info", "-imports", str(path)], text=True)
+    return linux_toolchain.imports_listing(Path(path).read_bytes())
 
 
 def main():
@@ -90,9 +114,7 @@ def main():
         staged_eevee = temporary / "EeveeSpotify.dylib"
         eevee_bytes, reminder = patch_reminder(eevee_bytes)
         staged_eevee.write_bytes(eevee_bytes)
-        run("codesign", "--force", "--sign", "-", "--timestamp=none", staged_eevee)
-        run("codesign", "--verify", "--strict", staged_eevee)
-        run("xcrun", "dyld_info", "-validate_only", staged_eevee)
+        sign_and_validate(staged_eevee)
         eevee = staged_eevee
         companion = temporary / "SpotifyAudioProbe.dylib"
         build_companion(companion, temporary)
@@ -100,8 +122,8 @@ def main():
         binary.write_bytes(patched)
         binary.chmod(0o755)
         signing_metadata = sign_preserving_entitlements(binary, native, temporary / "Spotify.entitlements.plist")
-        run("xcrun", "dyld_info", "-validate_only", binary)
-        imports = subprocess.check_output(["xcrun", "dyld_info", "-imports", str(binary)], text=True)
+        validate(binary)
+        imports = imports_listing(binary)
         for change in audio["changes"]:
             matches = [line for line in imports.splitlines() if change["symbol"] in line]
             if not matches or not all("SpotifyAudioProbe" in line for line in matches):

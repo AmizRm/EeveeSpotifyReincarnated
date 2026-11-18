@@ -19,6 +19,7 @@ from pixie_target import PROFILE
 from patch_native_restrictions import branch, layout, UUID
 from patch_key_request_mode import DLSYM_STUB, _verify_dlsym_binding
 from patch_native_trace import text_tail_padding
+import linux_toolchain
 
 BASE = int(PROFILE["preferred_address"], 16)
 SYMBOL = b"SAPObserveExportBoundaryV2\0"
@@ -96,9 +97,7 @@ Lname:
     with tempfile.TemporaryDirectory(prefix='pixie-frame-v2-') as temp:
         source, obj = Path(temp)/'frame.S', Path(temp)/'frame.o'
         source.write_text(assembly)
-        sdk = subprocess.check_output(['xcrun', '--sdk', 'iphoneos', '--show-sdk-path'], text=True).strip()
-        subprocess.run(['xcrun', 'clang', '-c', '-arch', 'arm64', '-target',
-                        'arm64-apple-ios15.0', '-isysroot', sdk, str(source), '-o', str(obj)], check=True)
+        linux_toolchain.assemble(source, obj)
         raw = obj.read_bytes()
     cursor = 32
     for _ in range(struct.unpack_from('<I', raw, 16)[0]):
